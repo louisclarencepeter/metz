@@ -7,6 +7,7 @@ import ThemeToggle from "./components/ThemeToggle.jsx";
 import { useI18n } from "./i18n.jsx";
 import { company } from "./data/content.js";
 import { telHref } from "./utils/format.js";
+import { trackPageView } from "./utils/googleAnalytics.js";
 import Home from "./pages/Home.jsx";
 
 const About = lazy(() => import("./pages/About.jsx"));
@@ -40,6 +41,7 @@ function usePageEffects() {
     const page = navItems.find((item) => item.to === canonicalPath);
 
     document.title = page ? `${t(page.key)} | METZ Engineering` : "METZ Engineering";
+    trackPageView(canonicalPath);
     window.scrollTo({ top: 0, left: 0 });
 
     const reduceMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
