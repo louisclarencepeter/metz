@@ -47,9 +47,9 @@ npm run build
 GitHub Actions runs the `CI / verify` job for pull requests and pushes to
 `development` and `main`. It uses Node.js from `.nvmrc` and npm from
 `package.json`'s `packageManager`, installs the lockfile with `npm ci`, rejects
-moderate-or-higher dependency audit findings, checks contact-function and service-worker syntax,
-and builds the production site. Actions are pinned to exact commits and use a
-read-only repository token.
+moderate-or-higher dependency audit findings, checks contact-function and
+service-worker syntax, tests contact-handler behavior, and builds the production
+site. Actions are pinned to exact commits and use a read-only repository token.
 
 Run the same project checks locally after selecting the versions above:
 
@@ -58,6 +58,7 @@ npm ci
 npm audit --audit-level=moderate
 node --check netlify/functions/contact.js
 node --check public/sw.js
+npm test
 npm run build
 ```
 
@@ -65,6 +66,10 @@ The syntax checks cover files that Vite does not compile: the Netlify function
 and the service worker copied from `public`.
 These checks do not submit contact inquiries or verify email delivery, browser
 interactions, or a production deployment.
+
+The native Node regression tests use synthetic configuration and a mocked email
+provider. They verify input validation, honeypot handling, message formatting,
+and controlled provider failures without sending email.
 
 ## Contact form (Netlify Function + Resend)
 
@@ -90,6 +95,17 @@ CONTACT_TO=info@metzengineering.co.tz
 `CONTACT_FROM` and `CONTACT_TO` are optional. If omitted, the function uses the
 values shown above. `RESEND_API_KEY` is required, and the function returns a 500
 if it is missing.
+
+Malformed JSON or non-object submissions return JSON `400` responses. Contact
+fields accept text; missing or null values are treated as empty strings, with
+name, email and message still required. A filled text honeypot is silently
+accepted without contacting the email provider.
+
+Provider HTTP errors, connection failures and a 10-second request timeout return
+the same generic JSON `502` response. Provider response bodies and exception
+details are not logged. Requests are attempted once, with no automatic retry:
+a connection failure or timeout can occur after provider acceptance. A `200`
+response indicates provider acceptance, not proof of delivery to the mailbox.
 
 To run the function locally, use the Netlify CLI (plain `vite` does not
 execute Netlify Functions):
