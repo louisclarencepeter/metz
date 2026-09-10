@@ -44,5 +44,8 @@ jobs:
           node --check netlify/functions/contact.js
           node --check public/sw.js
 
+      - name: Contact handler regression tests
+        run: npm test
+
       - name: Build production site
         run: npm run build

@@ -1,6 +1,7 @@
 const DEFAULT_FROM_ADDRESS = "METZ Website <noreply@metzengineering.co.tz>";
 const DEFAULT_TO_ADDRESS = "info@metzengineering.co.tz";
 const MAX_FIELD_LENGTH = 5000;
+const PROVIDER_TIMEOUT_MS = 10_000;
 
 const getEnv = (name) => {
   if (globalThis.Netlify?.env) return globalThis.Netlify.env.get(name);
@@ -31,16 +32,30 @@ export default async (req) => {
     return json(400, { error: "Invalid JSON" });
   }
 
+  if (payload === null || typeof payload !== "object" || Array.isArray(payload)) {
+    return json(400, { error: "Invalid submission" });
+  }
+
+  const honeypot = payload["bot-field"] ?? "";
+  if (typeof honeypot !== "string") {
+    return json(400, { error: "Invalid field value" });
+  }
+  // Silently accept honeypot hits before inspecting the remaining fields.
+  if (honeypot.trim()) return json(200, { ok: true });
+
+  if (
+    ["name", "email", "phone", "service", "message"].some(
+      (field) => payload[field] != null && typeof payload[field] !== "string",
+    )
+  ) {
+    return json(400, { error: "Invalid field value" });
+  }
+
   const name = (payload.name ?? "").trim();
   const email = (payload.email ?? "").trim();
   const phone = (payload.phone ?? "").trim();
   const service = (payload.service ?? "").trim();
   const message = (payload.message ?? "").trim();
-  const honeypot = (payload["bot-field"] ?? "").trim();
-
-  // Silently accept honeypot hits so bots don't learn.
-  if (honeypot) return json(200, { ok: true });
-
   if (!name || !email || !message) {
     return json(400, { error: "Missing required fields" });
   }
@@ -85,25 +100,39 @@ export default async (req) => {
     <p style="white-space: pre-wrap;">${escapeHtml(message)}</p>
   `.trim();
 
-  const response = await fetch("https://api.resend.com/emails", {
-    method: "POST",
-    headers: {
-      Authorization: `Bearer ${apiKey}`,
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify({
-      from: fromAddress,
-      to: toAddress,
-      reply_to: email,
-      subject,
-      text,
-      html,
-    }),
-  });
+  let response;
+  try {
+    // A timeout may happen after acceptance; do not retry this POST automatically.
+    response = await fetch("https://api.resend.com/emails", {
+      method: "POST",
+      signal: AbortSignal.timeout(PROVIDER_TIMEOUT_MS),
+      headers: {
+        Authorization: `Bearer ${apiKey}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        from: fromAddress,
+        to: toAddress,
+        reply_to: email,
+        subject,
+        text,
+        html,
+      }),
+    });
+  } catch {
+    console.error("Resend request failed");
+    return json(502, { error: "Failed to send email" });
+  }
+
+  // Release unused provider bodies without changing the known HTTP outcome.
+  try {
+    await response.body?.cancel();
+  } catch {
+    // Cleanup failure must not turn an accepted request into a retryable error.
+  }
 
   if (!response.ok) {
-    const detail = await response.text();
-    console.error("Resend error", response.status, detail);
+    console.error("Resend error", response.status);
     return json(502, { error: "Failed to send email" });
   }
 
