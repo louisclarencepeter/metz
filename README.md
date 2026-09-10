@@ -42,6 +42,30 @@ Create a production build:
 npm run build
 ```
 
+## Continuous integration
+
+GitHub Actions runs the `CI / verify` job for pull requests and pushes to
+`development` and `main`. It uses Node.js from `.nvmrc` and npm from
+`package.json`'s `packageManager`, installs the lockfile with `npm ci`, rejects
+moderate-or-higher dependency audit findings, checks contact-function and service-worker syntax,
+and builds the production site. Actions are pinned to exact commits and use a
+read-only repository token.
+
+Run the same project checks locally after selecting the versions above:
+
+```bash
+npm ci
+npm audit --audit-level=moderate
+node --check netlify/functions/contact.js
+node --check public/sw.js
+npm run build
+```
+
+The syntax checks cover files that Vite does not compile: the Netlify function
+and the service worker copied from `public`.
+These checks do not submit contact inquiries or verify email delivery, browser
+interactions, or a production deployment.
+
 ## Contact form (Netlify Function + Resend)
 
 The contact form posts JSON to `/api/contact`, which is handled by the Netlify
